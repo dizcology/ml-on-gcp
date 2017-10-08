@@ -5,19 +5,24 @@ import gym
 OBSERVATION_DIM = 80 * 80
 HIDDEN_DIM = 200
 BATCH_SIZE = 10
-NUM_BATCHES = 2000
-GAMMA = 0.9 # for discounted reward
+NUM_BATCHES = 500
+GAMMA = 0.95 # for discounted reward
 LEARNING_RATE = 3e-3
-DECAY = 0.9 # for RMSProp
+DECAY = 0.95 # for RMSProp
 
 W1_SHAPE = (HIDDEN_DIM, OBSERVATION_DIM)
 W2_SHAPE = (1, HIDDEN_DIM)
 
 RENDER = False
-RESTORE = True
-SAVE_PATH = './model.ckpt'
-SUMMARY_PATH = './summary'
+RESTORE = False
+
 SUMMARY_STEP = 10
+SAVE_STEP = 20
+
+SAVE_ROOT = 'gs://sandbox-cmle/pong'
+SAVE_PATH =  SAVE_ROOT + '/checkpoints'
+RESTORE_PATH = tf.train.latest_checkpoint(SAVE_ROOT)
+SUMMARY_PATH = SAVE_ROOT + '/summary'
 
 # preprocessing taken from:
 # https://gist.github.com/karpathy/a4166c7fe253700972fcbc77e4ea32c5
@@ -56,8 +61,11 @@ optimizer = tf.train.RMSPropOptimizer(learning_rate=LEARNING_RATE, decay=DECAY)
 compute_gradients = optimizer.compute_gradients(loss, var_list=[w1, w2])
 apply_gradients = optimizer.apply_gradients([(grad_w1, w1), (grad_w2, w2)])
 
-init = tf.global_variables_initializer()
+# global_step records the number of times the weights are updated
+global_step = tf.Variable(0, trainable=False, name='global_step')
+increment_global_step = tf.assign(global_step, global_step + 1)
 
+init = tf.global_variables_initializer()
 saver = tf.train.Saver()
 
 b_reward = tf.placeholder(shape=(), dtype=tf.float32)
@@ -72,8 +80,9 @@ merged = tf.summary.merge_all()
 
 with tf.Session() as sess:
     if RESTORE:
-        saver.restore(sess, SAVE_PATH)
+        saver.restore(sess, RESTORE_PATH)
         print(optimizer._learning_rate)
+        print(sess.run(global_step))
     else:
         sess.run(init)
 
@@ -133,13 +142,15 @@ with tf.Session() as sess:
         batch_reward /= BATCH_SIZE
         print('\t\tbatch_reward: {}'.format(batch_reward))
 
-        if i % SUMMARY_STEP == 0:
+        g_step = sess.run(global_step)
+        if g_step % SUMMARY_STEP == 0:
             print('Writing summary')
             summary = sess.run(merged, feed_dict={b_reward:batch_reward})
-            summary_writer.add_summary(summary, i)
+            summary_writer.add_summary(summary, g_step)
 
         print('updating weights!!!')
-        _ = sess.run(apply_gradients, feed_dict={grad_w1:batch_gradient_w1, grad_w2:batch_gradient_w2})
+        _ = sess.run([apply_gradients, increment_global_step], feed_dict={grad_w1:batch_gradient_w1, grad_w2:batch_gradient_w2})
 
-        save_path = saver.save(sess, SAVE_PATH)
-        print('model saved: {}'.format(save_path))
+        if g_step % SAVE_STEP == 0:
+            save_path = saver.save(sess, SAVE_PATH, global_step=g_step)
+            print('model saved: {}'.format(save_path))
