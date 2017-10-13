@@ -31,7 +31,8 @@ def main(args):
         inputs=layers[-1],
         units=len(ACTIONS),
         use_bias=False,
-        activation=tf.nn.softmax,
+        # linear activation
+        activation=None,
         kernel_initializer=tf.contrib.layers.xavier_initializer(uniform=False)
     )
 
