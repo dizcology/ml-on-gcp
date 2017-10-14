@@ -21,24 +21,3 @@ def discount_rewards(r, gamma):
         running_add = running_add * gamma + r[t]
         discounted_r[t] = running_add
     return discounted_r
-
-
-def onehot(x, xs):
-    assert x in xs
-
-    index = [i for i, y in enumerate(xs) if y == x][0]
-    dummy = [0] * len(xs)
-    dummy[index] = 1
-    return dummy
-
-
-def weighted_choice(xs, ws):
-    assert len(xs) == len(ws)
-
-    total_weight = sum(ws)
-    r = np.random.uniform(0, total_weight)
-    for i, x in enumerate(xs):
-        w = ws[i]
-        r -= w
-        if r <= 0:
-            return x

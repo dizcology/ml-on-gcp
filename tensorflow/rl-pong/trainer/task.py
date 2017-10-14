@@ -4,10 +4,11 @@ import tensorflow as tf
 import numpy as np
 import gym
 
-from helpers import discount_rewards, prepro, onehot, weighted_choice
+from helpers import discount_rewards, prepro
 
 # Open AI gym Atari env: 0: 'NOOP', 2: 'UP', 3: 'DOWN'
 ACTIONS = [0, 2, 3]
+ACTIONS = [2, 3]
 OBSERVATION_DIM = 80 * 80
 
 def main(args):
@@ -36,24 +37,26 @@ def main(args):
         kernel_initializer=tf.contrib.layers.xavier_initializer(uniform=False)
     )
 
-    probs = tf.nn.softmax(logits)
+    logits_for_sampling = tf.reshape(logits, shape=(1, len(ACTIONS)))
+    sample_action = tf.multinomial(logits_for_sampling, num_samples=1)
 
     labels = tf.placeholder(
-        shape=(None, len(ACTIONS)),
-        dtype=tf.float32
+        shape=(None, ),
+        dtype=tf.int32
     )
     rewards = tf.placeholder(
-        shape=(None,),
+        shape=(None, ),
         dtype=tf.float32
     )
     processed_rewards = tf.placeholder(
-        shape=(None,),
+        shape=(None, ),
         dtype=tf.float32
     )
 
-    cross_entropies = tf.nn.softmax_cross_entropy_with_logits(logits=logits, labels=labels)
+    # FIXME: got very different loss values if implementing cross entropy myself with safe_probs.
+    cross_entropies = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=labels)
 
-    loss = -tf.reduce_sum(processed_rewards * cross_entropies) / args.batch_size
+    loss = -tf.reduce_sum(processed_rewards * cross_entropies)
 
     batch_reward = tf.reduce_sum(rewards) / args.batch_size
 
@@ -117,11 +120,9 @@ def main(args):
                     _observation = current_x - previous_x if previous_x is not None else np.zeros(OBSERVATION_DIM)
                     previous_x = current_x
 
-                    # This feeds a batch of 1
-                    _probs = sess.run(probs, feed_dict={observations: [_observation]})[0]
-
-                    _action = weighted_choice(ACTIONS, ws=_probs)
-                    _label = onehot(_action, ACTIONS)
+                    # sample one action with the given probability distribution
+                    _label = int(sess.run(sample_action, feed_dict={observations: [_observation]})[0, 0])
+                    _action = ACTIONS[_label]
 
                     state, reward, done, info = env.step(_action)
 
@@ -210,7 +211,8 @@ if __name__ == '__main__':
         '--hidden-dims',
         type=int,
         nargs='+',
-        default=[200])
+        default=[200],
+        required=True)
 
     args = parser.parse_args()
     main(args)
