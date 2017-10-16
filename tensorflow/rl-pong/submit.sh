@@ -16,6 +16,6 @@ gcloud ml-engine jobs submit training $JOB_NAME \
     --config config.yaml \
     -- \
     --job-dir $JOB_DIR \
-    #--learning-rate 0.0001 \
-    #--hidden-dims 200
+    --learning-rate 0.0005 \
+    --hidden-dims 40 20 10
     

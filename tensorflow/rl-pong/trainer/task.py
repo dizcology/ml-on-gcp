@@ -59,8 +59,6 @@ def main(args):
 
     batch_reward = tf.reduce_sum(rewards) / args.batch_size
 
-    # This could be different than Karpathy's implementation? Karpathy considers the gradient used for each update (every 10 episodes) as a single gradient to be used in RMSProp's moving average square gradient.
-    # tf.train.RMSProp's implementation... not sure?
     optimizer = tf.train.RMSPropOptimizer(
         learning_rate=args.learning_rate,
         decay=args.decay
@@ -149,13 +147,6 @@ def main(args):
             _observations = np.array(_observations)
             _labels = np.array(_labels)
             _rewards = np.array(_rewards)
-
-            # This could be different from Karpathy's:  which batches are normalized together?
-            # different!  Karpathy normalizes after every episode
-            # here I normlizes after every batch
-            #_processed_rewards = discount_rewards(_rewards, args.gamma)
-            #_processed_rewards -= np.mean(_processed_rewards)
-            #_processed_rewards /= np.std(_processed_rewards)
 
             feed_dict = {
                 observations: _observations,
