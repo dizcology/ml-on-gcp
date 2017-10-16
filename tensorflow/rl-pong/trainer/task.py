@@ -38,7 +38,7 @@ def main(args):
     )
 
     logits_for_sampling = tf.reshape(logits, shape=(1, len(ACTIONS)))
-    sample_action = tf.multinomial(logits_for_sampling, num_samples=1)
+    sample_action = tf.multinomial(logits=logits_for_sampling, num_samples=1)
 
     labels = tf.placeholder(
         shape=(None, ),
@@ -53,16 +53,20 @@ def main(args):
         dtype=tf.float32
     )
 
-    # FIXME: got very different loss values if implementing cross entropy myself with safe_probs.
     cross_entropies = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=labels)
 
     loss = -tf.reduce_sum(processed_rewards * cross_entropies)
 
     batch_reward = tf.reduce_sum(rewards) / args.batch_size
 
+    # This could be different than Karpathy's implementation? Karpathy considers the gradient used for each update (every 10 episodes) as a single gradient to be used in RMSProp's moving average square gradient.
+    # tf.train.RMSProp's implementation... not sure?
     optimizer = tf.train.RMSPropOptimizer(
         learning_rate=args.learning_rate,
         decay=args.decay
+    )
+    optimizer = tf.train.GradientDescentOptimizer(
+        learning_rate=args.learning_rate
     )
     train_op = optimizer.minimize(loss)
 
@@ -87,7 +91,6 @@ def main(args):
 
     merged = tf.summary.merge_all()
 
-
     with tf.Session() as sess:
         if args.restore:
             restore_path = tf.train.latest_checkpoint(args.job_dir)
@@ -110,6 +113,8 @@ def main(args):
                 print('>>>>>>> {} / {} of batch {}'.format(j+1, args.batch_size, i))
                 state = env.reset()
                 previous_x = None
+                _episode_rewards = []
+                _episode_preocessed_rewards = []
 
                 # The loop for actions/steps
                 while True:
@@ -128,18 +133,29 @@ def main(args):
 
                     _observations.append(_observation)
                     _labels.append(_label)
-                    _rewards.append(reward)
+                    _episode_rewards.append(reward)
 
                     if done:
                         break
+
+                # Process the rewards after each espisode
+                _episode_preocessed_rewards = discount_rewards(_episode_rewards, args.gamma)
+                _episode_preocessed_rewards -= np.mean(_episode_preocessed_rewards)
+                _episode_preocessed_rewards /= np.std(_episode_preocessed_rewards)
+
+                _rewards.extend(_episode_rewards)
+                _processed_rewards.extend(_episode_preocessed_rewards)
 
             _observations = np.array(_observations)
             _labels = np.array(_labels)
             _rewards = np.array(_rewards)
 
-            _processed_rewards = discount_rewards(_rewards, args.gamma)
-            _processed_rewards -= np.mean(_processed_rewards)
-            _processed_rewards /= np.std(_processed_rewards)
+            # This could be different from Karpathy's:  which batches are normalized together?
+            # different!  Karpathy normalizes after every episode
+            # here I normlizes after every batch
+            #_processed_rewards = discount_rewards(_rewards, args.gamma)
+            #_processed_rewards -= np.mean(_processed_rewards)
+            #_processed_rewards /= np.std(_processed_rewards)
 
             feed_dict = {
                 observations: _observations,
@@ -147,6 +163,10 @@ def main(args):
                 rewards: _rewards,
                 processed_rewards: _processed_rewards
             }
+
+            assert len(_observations) == len(_labels)
+            assert len(_labels) == len(_rewards)
+            assert len(_rewards) == len(_processed_rewards)
 
             g_step = sess.run(global_step)
             if g_step % args.save_summary_steps == 0:
@@ -169,7 +189,7 @@ if __name__ == '__main__':
     parser.add_argument(
         '--n-batch',
         type=int,
-        default=3000)
+        default=6000)
     parser.add_argument(
         '--batch-size',
         type=int,
@@ -211,8 +231,7 @@ if __name__ == '__main__':
         '--hidden-dims',
         type=int,
         nargs='+',
-        default=[200],
-        required=True)
+        default=[200])
 
     args = parser.parse_args()
     main(args)
