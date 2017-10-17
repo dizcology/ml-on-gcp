@@ -3,6 +3,7 @@ import os
 import tensorflow as tf
 import numpy as np
 import gym
+import json
 
 from helpers import discount_rewards, prepro
 
@@ -12,6 +13,15 @@ ACTIONS = [2, 3]
 OBSERVATION_DIM = 80 * 80
 
 def main(args):
+    args_dict = vars(args)
+    args_dict['action'] = ACTIONS
+
+    args_string = json.dumps(args_dict)
+    args_tensor = tf.constant(args_string)
+    args_summary = tf.summary.tensor_summary('args', args_tensor)
+
+    print('args: {}'.format(args_dict))
+
     tf.reset_default_graph()
     observations = tf.placeholder(shape=(None, OBSERVATION_DIM), dtype=tf.float32)
 
@@ -55,7 +65,7 @@ def main(args):
 
     cross_entropies = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=labels)
 
-    loss = -tf.reduce_sum(processed_rewards * cross_entropies)
+    loss = tf.reduce_sum(processed_rewards * cross_entropies)
 
     batch_reward = tf.reduce_sum(rewards) / args.batch_size
 
@@ -91,14 +101,15 @@ def main(args):
 
     with tf.Session() as sess:
         if args.restore:
-            restore_path = tf.train.latest_checkpoint(args.job_dir)
+            restore_path = tf.train.latest_checkpoint(args.output_dir)
+            print('Restoring from {}'.format(restore_path))
             saver.restore(sess, restore_path)
         else:
             sess.run(init)
 
         env = gym.make("Pong-v0")
 
-        summary_path = os.path.join(args.job_dir, 'summary')
+        summary_path = os.path.join(args.output_dir, 'summary')
         summary_writer = tf.summary.FileWriter(summary_path, sess.graph)
 
         for i in range(args.n_batch):
@@ -144,6 +155,10 @@ def main(args):
                 _rewards.extend(_episode_rewards)
                 _processed_rewards.extend(_episode_preocessed_rewards)
 
+                if len(_rewards) >= args.max_steps:
+                    print('Max steps reached.')
+                    break
+
             _observations = np.array(_observations)
             _labels = np.array(_labels)
             _rewards = np.array(_rewards)
@@ -159,21 +174,21 @@ def main(args):
             assert len(_labels) == len(_rewards)
             assert len(_rewards) == len(_processed_rewards)
 
-            g_step = sess.run(global_step)
-            if g_step % args.save_summary_steps == 0:
-                print('Writing summary')
-                summary = sess.run(merged, feed_dict=feed_dict)
-                summary_writer.add_summary(summary, g_step)
+            if not args.dry_run:
+                g_step = sess.run(global_step)
+                if g_step % args.save_summary_steps == 0:
+                    print('Writing summary')
+                    summary = sess.run(merged, feed_dict=feed_dict)
+                    summary_writer.add_summary(summary, g_step)
 
-            print('Updating weights')
-            _ = sess.run([train_op, increment_global_step], feed_dict=feed_dict)
+                print('Updating weights')
+                _ = sess.run([train_op, increment_global_step], feed_dict=feed_dict)
 
-            if g_step % args.save_checkpoint_steps == 0:
-                save_path = os.path.join(args.job_dir, 'model.ckpt')
-                save_path = saver.save(sess, save_path, global_step=g_step)
-                print('Model checkpoint saved: {}'.format(save_path))
+                if g_step % args.save_checkpoint_steps == 0:
+                    save_path = os.path.join(args.output_dir, 'model.ckpt')
+                    save_path = saver.save(sess, save_path, global_step=g_step)
+                    print('Model checkpoint saved: {}'.format(save_path))
         
-
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser('pong trainer')
@@ -186,6 +201,11 @@ if __name__ == '__main__':
         type=int,
         default=10)
     parser.add_argument(
+        '--max-steps',
+        type=int,
+        default=5000,
+        help='Maximum number of steps before weight update.')
+    parser.add_argument(
         '--save-summary-steps',
         type=int,
         default=20)
@@ -194,15 +214,24 @@ if __name__ == '__main__':
         type=int,
         default=40)
     parser.add_argument(
+        '--output-dir',
+        type=str,
+        default='/tmp/pong_output')
+    parser.add_argument(
         '--job-dir',
         type=str,
         default='/tmp/pong_output')
+
     parser.add_argument(
         '--restore',
         default=False,
         action='store_true')
     parser.add_argument(
         '--render',
+        default=False,
+        action='store_true')
+    parser.add_argument(
+        '--dry-run',
         default=False,
         action='store_true')
 
