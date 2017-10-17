@@ -8,13 +8,13 @@ import json
 from helpers import discount_rewards, prepro
 
 # Open AI gym Atari env: 0: 'NOOP', 2: 'UP', 3: 'DOWN'
-ACTIONS = [0, 2, 3]
+NOOP_ACTIONS = [0, 2, 3]
 ACTIONS = [2, 3]
+
 OBSERVATION_DIM = 80 * 80
 
 def main(args):
     args_dict = vars(args)
-    args_dict['action'] = ACTIONS
 
     args_string = json.dumps(args_dict)
     args_tensor = tf.constant(args_string)
@@ -40,14 +40,14 @@ def main(args):
 
     logits = tf.layers.dense(
         inputs=layers[-1],
-        units=len(ACTIONS),
+        units=len(args.actions),
         use_bias=False,
         # linear activation
         activation=None,
         kernel_initializer=tf.contrib.layers.xavier_initializer(uniform=False)
     )
 
-    logits_for_sampling = tf.reshape(logits, shape=(1, len(ACTIONS)))
+    logits_for_sampling = tf.reshape(logits, shape=(1, len(args.actions)))
     sample_action = tf.multinomial(logits=logits_for_sampling, num_samples=1)
 
     labels = tf.placeholder(
@@ -67,7 +67,9 @@ def main(args):
 
     loss = tf.reduce_sum(processed_rewards * cross_entropies)
 
-    batch_reward = tf.reduce_sum(rewards) / args.batch_size
+    n_episode_played = tf.placeholder(shape=(), dtype=tf.float32)
+
+    batch_reward = tf.reduce_sum(rewards) / n_episode_played
 
     optimizer = tf.train.RMSPropOptimizer(
         learning_rate=args.learning_rate,
@@ -109,14 +111,16 @@ def main(args):
 
         env = gym.make("Pong-v0")
 
-        summary_path = os.path.join(args.output_dir, 'summary')
-        summary_writer = tf.summary.FileWriter(summary_path, sess.graph)
+        if not args.dry_run:
+            summary_path = os.path.join(args.output_dir, 'summary')
+            summary_writer = tf.summary.FileWriter(summary_path, sess.graph)
 
         for i in range(args.n_batch):
             _observations = []
             _labels = []
             _rewards = []
             _processed_rewards = []
+            _n_episode_played = 0.0
 
             for j in range(args.batch_size):
                 print('>>>>>>> {} / {} of batch {}'.format(j+1, args.batch_size, i))
@@ -136,7 +140,7 @@ def main(args):
 
                     # sample one action with the given probability distribution
                     _label = int(sess.run(sample_action, feed_dict={observations: [_observation]})[0, 0])
-                    _action = ACTIONS[_label]
+                    _action = args.actions[_label]
 
                     state, reward, done, info = env.step(_action)
 
@@ -145,6 +149,7 @@ def main(args):
                     _episode_rewards.append(reward)
 
                     if done:
+                        _n_episode_played += 1
                         break
 
                 # Process the rewards after each espisode
@@ -167,7 +172,8 @@ def main(args):
                 observations: _observations,
                 labels: _labels,
                 rewards: _rewards,
-                processed_rewards: _processed_rewards
+                processed_rewards: _processed_rewards,
+                n_episode_played: _n_episode_played,
             }
 
             assert len(_observations) == len(_labels)
@@ -203,7 +209,7 @@ if __name__ == '__main__':
     parser.add_argument(
         '--max-steps',
         type=int,
-        default=5000,
+        default=20000,
         help='Maximum number of steps before weight update.')
     parser.add_argument(
         '--save-summary-steps',
@@ -252,6 +258,12 @@ if __name__ == '__main__':
         type=int,
         nargs='+',
         default=[200])
+    parser.add_argument(
+        '--allow-noop',
+        default=False,
+        action='store_true')
 
     args = parser.parse_args()
+
+    args.actions = NOOP_ACTIONS if args.allow_noop else ACTIONS
     main(args)

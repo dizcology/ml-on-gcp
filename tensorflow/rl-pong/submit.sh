@@ -15,10 +15,10 @@ gcloud ml-engine jobs submit training $JOB_NAME \
     --region us-central1 \
     --config config.yaml \
     -- \
-    --output-dir "gs://sandbox-cmle/pong_200" \
-    --restore \
+    --output-dir "gs://sandbox-cmle/pong_200_noop" \
+    --learning-rate 0.0005 \
+    #--restore \
     #--job-dir $JOB_DIR \
-    #--learning-rate 0.0005 \
     #--hidden-dims 100 100 \
     #--batch-size 1 \
     #--n-batch 60000
