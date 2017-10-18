@@ -13,6 +13,8 @@ ACTIONS = [2, 3]
 
 OBSERVATION_DIM = 80 * 80
 
+EPSILON = 1e-8
+
 def main(args):
     args_dict = vars(args)
 
@@ -53,7 +55,17 @@ def main(args):
     # adding additional cost to actions other than NOOP
     action_costs_tensor = args.beta * tf.constant(args.action_costs, dtype=tf.float32)
     probs = tf.nn.softmax(logits=logits)
-    extra_loss = tf.reduce_sum(probs * action_costs_tensor)
+
+    if args.dirichlet:
+        # Using Dirichlet prior
+        # the parameters [a0, a1, a2] can be interpreted as saying that
+        # action i was sampled ai - 1 times; the weights in the
+        # regularization terms are ai - 1.
+        # https://en.wikipedia.org/wiki/Dirichlet_distribution
+        safe_probs = probs + EPSILON
+        extra_loss = -tf.reduce_sum(tf.log(safe_probs) * args.prior_param)
+    else:
+        extra_loss = tf.reduce_sum(probs * action_costs_tensor)
 
     labels = tf.placeholder(
         shape=(None, ),
@@ -145,6 +157,7 @@ def main(args):
 
                     # sample one action with the given probability distribution
                     _label = int(sess.run(sample_action, feed_dict={observations: [_observation]})[0, 0])
+
                     _action = args.actions[_label]
 
                     state, reward, done, info = env.step(_action)
@@ -276,6 +289,10 @@ if __name__ == '__main__':
         '--beta',
         type=float,
         default=0.01)
+    parser.add_argument(
+        '--dirichlet',
+        default=False,
+        action='store_true')
 
     args = parser.parse_args()
 
@@ -285,6 +302,9 @@ if __name__ == '__main__':
     else:
         args.actions = ACTIONS
         args.action_costs = [0, 0]
+
+    if args.dirichlet:
+        args.prior_param = [10, 1, 1]
 
 
     main(args)
