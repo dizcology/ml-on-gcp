@@ -50,6 +50,11 @@ def main(args):
     logits_for_sampling = tf.reshape(logits, shape=(1, len(args.actions)))
     sample_action = tf.multinomial(logits=logits_for_sampling, num_samples=1)
 
+    # adding additional cost to actions other than NOOP
+    action_costs_tensor = args.beta * tf.constant(args.action_costs, dtype=tf.float32)
+    probs = tf.nn.softmax(logits=logits)
+    extra_loss = tf.reduce_sum(probs * action_costs_tensor)
+
     labels = tf.placeholder(
         shape=(None, ),
         dtype=tf.int32
@@ -65,7 +70,7 @@ def main(args):
 
     cross_entropies = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=labels)
 
-    loss = tf.reduce_sum(processed_rewards * cross_entropies)
+    loss = tf.reduce_sum(processed_rewards * cross_entropies) + extra_loss
 
     n_episode_played = tf.placeholder(shape=(), dtype=tf.float32)
 
@@ -262,8 +267,24 @@ if __name__ == '__main__':
         '--allow-noop',
         default=False,
         action='store_true')
+    parser.add_argument(
+        '--action-costs',
+        type=int,
+        nargs='+',
+        default=[0, 0])
+    parser.add_argument(
+        '--beta',
+        type=float,
+        default=0.01)
 
     args = parser.parse_args()
 
-    args.actions = NOOP_ACTIONS if args.allow_noop else ACTIONS
+    if args.allow_noop:
+        args.actions = NOOP_ACTIONS
+        args.action_costs = [0, 1, 1]
+    else:
+        args.actions = ACTIONS
+        args.action_costs = [0, 0]
+
+
     main(args)
