@@ -13,8 +13,6 @@ ACTIONS = [2, 3]
 
 OBSERVATION_DIM = 80 * 80
 
-EPSILON = 1e-8
-
 def main(args):
     args_dict = vars(args)
 
@@ -56,16 +54,8 @@ def main(args):
     action_costs_tensor = args.beta * tf.constant(args.action_costs, dtype=tf.float32)
     probs = tf.nn.softmax(logits=logits)
 
-    if args.dirichlet:
-        # Using Dirichlet prior
-        # the parameters [a0, a1, a2] can be interpreted as saying that
-        # action i was sampled ai - 1 times; the weights in the
-        # regularization terms are ai - 1.
-        # https://en.wikipedia.org/wiki/Dirichlet_distribution
-        safe_probs = probs + EPSILON
-        extra_loss = -tf.reduce_sum(tf.log(safe_probs) * args.prior_param)
-    else:
-        extra_loss = tf.reduce_sum(probs * action_costs_tensor)
+    # TODO: interpret the extra loss terms as KL divergence?
+    extra_loss = tf.reduce_sum(probs * action_costs_tensor)
 
     labels = tf.placeholder(
         shape=(None, ),
@@ -102,7 +92,7 @@ def main(args):
     increment_global_step = tf.assign(global_step, global_step + 1)
 
     init = tf.global_variables_initializer()
-    saver = tf.train.Saver()
+    saver = tf.train.Saver(max_to_keep=args.max_to_keep)
 
     # The weights of the first hidden layer can be visualized.
     first_hidden = layers[1]
@@ -289,12 +279,11 @@ if __name__ == '__main__':
         '--beta',
         type=float,
         default=0.01)
-    parser.add_argument(
-        '--dirichlet',
-        default=False,
-        action='store_true')
 
     args = parser.parse_args()
+
+    # save all checkpoints!
+    args.max_to_keep = args.n_batch / args.save_checkpoint_steps
 
     if args.allow_noop:
         args.actions = NOOP_ACTIONS
@@ -302,9 +291,5 @@ if __name__ == '__main__':
     else:
         args.actions = ACTIONS
         args.action_costs = [0, 0]
-
-    if args.dirichlet:
-        args.prior_param = [10, 1, 1]
-
 
     main(args)
