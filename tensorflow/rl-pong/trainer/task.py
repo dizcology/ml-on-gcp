@@ -54,7 +54,13 @@ def main(args):
     action_costs_tensor = args.beta * tf.constant(args.action_costs, dtype=tf.float32)
     probs = tf.nn.softmax(logits=logits)
 
-    # TODO: interpret the extra loss terms as KL divergence?
+    # Note: The extra loss can be interpreted terms as KL divergence.
+    # Consider Q = (q0, q1, q2) the estimated probs.
+    # Consider P = (0, cq1, cq2), where c is a normalizing constant.
+    # Where 1 = c(q1+q2) = c(1-q0)
+    # Then KL(P||Q) = c(q1+q2)log(c) = clog(c) * extra_loss.
+    # Note that KL is bounded between 0 and 1, c >= 0, and clog(c) is
+    # strictly increacing for c >= 0, and c and q0 increase together.
     extra_loss = tf.reduce_sum(probs * action_costs_tensor)
 
     labels = tf.placeholder(
