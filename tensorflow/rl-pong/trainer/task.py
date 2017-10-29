@@ -25,27 +25,34 @@ def main(args):
     tf.reset_default_graph()
     observations = tf.placeholder(shape=(None, OBSERVATION_DIM), dtype=tf.float32)
 
-    layers = [observations]
+    layers = []
+    outputs = []
 
+    # Poor man's sequential model
     for hidden_dim in args.hidden_dims:
-        _input = layers[-1]
-        _output = tf.layers.dense(
-            inputs=_input,
+        _input = outputs[-1] if len(layers) > 0 else observations
+        _layer = tf.layers.Dense(
             units=hidden_dim,
             use_bias=False,
             activation=tf.nn.relu,
             kernel_initializer=tf.contrib.layers.xavier_initializer(uniform=False)
         )
-        layers.append(_output)
+        _output = _layer(_input)
 
-    logits = tf.layers.dense(
-        inputs=layers[-1],
+        layers.append(_layer)
+        outputs.append(_output)
+
+    last_layer = tf.layers.Dense(
         units=len(args.actions),
         use_bias=False,
         # linear activation
         activation=None,
         kernel_initializer=tf.contrib.layers.xavier_initializer(uniform=False)
     )
+    logits = last_layer(outputs[-1])
+
+    layers.append(last_layer)
+    outputs.append(logits)
 
     logits_for_sampling = tf.reshape(logits, shape=(1, len(args.actions)))
     sample_action = tf.multinomial(logits=logits_for_sampling, num_samples=1)
@@ -53,6 +60,19 @@ def main(args):
     # adding additional cost to actions other than NOOP
     action_costs_tensor = args.beta * tf.constant(args.action_costs, dtype=tf.float32)
     probs = tf.nn.softmax(logits=logits)
+
+    # Where is the agent looking at?
+    pp = probs * (1 - probs)
+    #ppp = tf.constant(np.random.rand(49).astype(np.float32).reshape(7, 7))
+    back2 = tf.matmul(pp, tf.transpose(last_layer.kernel))
+
+    #backrelu = tf.nn.relu()
+
+    hidden_layer = layers[-2]
+    back1 = tf.matmul(back2, tf.transpose(hidden_layer.kernel))
+    # for now only for one hidden layer
+    #hidden = layers[-1]
+    #back1 = tf.transpose(hidden.kernel)
 
     # Note: The extra loss can be interpreted terms as KL divergence.
     # Consider Q = (q0, q1, q2) the estimated probs.
@@ -101,8 +121,8 @@ def main(args):
     saver = tf.train.Saver(max_to_keep=args.max_to_keep)
 
     # The weights of the first hidden layer can be visualized.
-    first_hidden = layers[1]
-    hidden_weights = tf.get_default_graph().get_tensor_by_name(os.path.split(first_hidden.name)[0] + '/kernel:0')
+    first_hidden = layers[0]
+    hidden_weights = first_hidden.kernel
 
     for h in xrange(args.hidden_dims[0]):
         slice_ = tf.slice(hidden_weights, [0, h], [-1, 1])
@@ -124,6 +144,16 @@ def main(args):
 
         env = gym.make("Pong-v0")
 
+        envspec = gym.spec('Pong-v0')
+        envspec._entry_point = 'overlay_env:AtariEnvOverlay'
+        env = envspec.make()
+        # somehow this is in EnvRegistry:
+        #from gym.wrappers.time_limit import TimeLimit
+        #env = TimeLimit(env,
+        #                max_episode_steps=env.spec.max_episode_steps,
+        #                max_episode_seconds=env.spec.max_episode_seconds)
+
+
         if not args.dry_run:
             summary_path = os.path.join(args.output_dir, 'summary')
             summary_writer = tf.summary.FileWriter(summary_path, sess.graph)
@@ -144,10 +174,12 @@ def main(args):
 
                 # The loop for actions/steps
                 while True:
-                    if args.render:
-                        env.render()
+                    # FIXME: handle the incorrect initial state more gracefully
+                    try:
+                        current_x = prepro(state)
+                    except:
+                        current_x = None
 
-                    current_x = prepro(state)
                     _observation = current_x - previous_x if previous_x is not None else np.zeros(OBSERVATION_DIM)
                     previous_x = current_x
 
@@ -161,6 +193,13 @@ def main(args):
                     _observations.append(_observation)
                     _labels.append(_label)
                     _episode_rewards.append(reward)
+
+                    # Overlay
+                    _back1 = sess.run(back1, feed_dict={observations: [_observation]})
+
+                    if args.render:
+                        env.set_overlay(data=_back1)
+                        env.render()
 
                     if done:
                         _n_episode_played += 1

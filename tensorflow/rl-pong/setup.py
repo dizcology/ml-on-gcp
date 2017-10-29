@@ -53,6 +53,7 @@ class CustomCommands(setuptools.Command):
 
 REQUIRED_PACKAGES = [
     'numpy==1.13.3',
+    'tensorflow==1.4.0rc1',
     'gym[atari]==0.9.3'
 ]
 

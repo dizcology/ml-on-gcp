@@ -15,10 +15,10 @@ gcloud ml-engine jobs submit training $JOB_NAME \
     --region us-central1 \
     --config config.yaml \
     -- \
-    --output-dir "gs://sandbox-cmle/pong_200_noop_smoothie_new" \
+    --output-dir "gs://sandbox-cmle/pong_200_noop_overlay" \
     --learning-rate 0.0005 \
     --allow-noop \
-    --beta 0.015 \
+    --beta 0.01 \
     --gamma 0.99 \
     --decay 0.99 \
     #--restore
