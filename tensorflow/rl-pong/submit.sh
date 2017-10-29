@@ -32,7 +32,7 @@ gcloud ml-engine jobs submit training $JOB_NAME \
     #--batch-size 1 \
     #--n-batch 60000 \
     
-# python trainer/task.py --render --dry-run --restore --allow-noop --output-dir "gs://sandbox-cmle/pong_200_noop_smoothie" --n-batch 1 --batch-size 1 (or smoother, smooth)
+# python trainer/task.py --render --dry-run --restore --allow-noop --n-batch 1 --batch-size 1 --output-dir "gs://sandbox-cmle/pong_200_noop_overlay"  (or smoother, smooth)
 
 # python trainer/task.py --render --dry-run --restore --allow-noop --output-dir "gs://sandbox-cmle/pong_100_100_noop_smoothie" --hidden-dims 100 100
 

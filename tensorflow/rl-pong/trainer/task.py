@@ -7,6 +7,50 @@ import json
 
 from helpers import discount_rewards, prepro
 
+####
+from gym.envs import atari
+import numpy as np
+
+class AtariEnvOverlay(atari.AtariEnv):
+    def __init__(self, *args, **kwargs):
+        print('Loading AtariEnv with overlay')
+        super(AtariEnvOverlay, self).__init__(*args, **kwargs)
+
+        self.overlay = np.zeros(210 * 160 * 3).astype(np.uint8).reshape(210, 160, 3)
+
+
+    def set_overlay(self, data=None):
+        self.overlay = np.zeros(210 * 160 * 3).astype(np.uint8).reshape(210, 160, 3)
+
+        if data is None:
+            return
+
+        # Note: data.shape = (1, 6400)
+        data = np.abs(data)
+        cutoff = np.percentile(data, 95, axis=1)
+        data = data.reshape(80, 80)
+
+        data[data < cutoff] = 0
+        data[data >= cutoff] = 50
+
+        #data = data.astype(np.uint8)
+
+        inflated = np.kron(data, np.ones((2, 2), dtype=np.uint8))
+        
+        self.overlay[35:195, :, 0] = inflated
+
+
+    def _get_image(self):
+        # shape: (210, 160, 3)
+        # image[35:195] has shape (160, 160, 3)
+        image =  self.ale.getScreenRGB2()
+
+        # overlay here
+        image += self.overlay
+
+        return image
+####
+
 # Open AI gym Atari env: 0: 'NOOP', 2: 'UP', 3: 'DOWN'
 NOOP_ACTIONS = [0, 2, 3]
 ACTIONS = [2, 3]
@@ -66,13 +110,17 @@ def main(args):
     #ppp = tf.constant(np.random.rand(49).astype(np.float32).reshape(7, 7))
     back2 = tf.matmul(pp, tf.transpose(last_layer.kernel))
 
+    # TODO: complete backprop
     #backrelu = tf.nn.relu()
+    hidden_output = outputs[-2]
+    condition = tf.less(hidden_output, tf.zeros_like(hidden_output))
+    mask = tf.where(condition, tf.zeros_like(hidden_output), tf.ones_like(hidden_output))
+
+    masked_back2 = mask * back2
 
     hidden_layer = layers[-2]
-    back1 = tf.matmul(back2, tf.transpose(hidden_layer.kernel))
-    # for now only for one hidden layer
-    #hidden = layers[-1]
-    #back1 = tf.transpose(hidden.kernel)
+    back1 = tf.matmul(masked_back2, tf.transpose(hidden_layer.kernel))
+
 
     # Note: The extra loss can be interpreted terms as KL divergence.
     # Consider Q = (q0, q1, q2) the estimated probs.
@@ -142,17 +190,22 @@ def main(args):
         else:
             sess.run(init)
 
-        env = gym.make("Pong-v0")
+        #env = gym.make("Pong-v0")
 
         envspec = gym.spec('Pong-v0')
-        envspec._entry_point = 'overlay_env:AtariEnvOverlay'
-        env = envspec.make()
+        env_kwargs = envspec.__dict__.get('_kwargs')
+        #envspec._entry_point = 'task:AtariEnvOverlay'
+        #env = envspec.make()
+
         # somehow this is in EnvRegistry:
         #from gym.wrappers.time_limit import TimeLimit
         #env = TimeLimit(env,
         #                max_episode_steps=env.spec.max_episode_steps,
         #                max_episode_seconds=env.spec.max_episode_seconds)
-
+        if args.render:
+            env = AtariEnvOverlay(**env_kwargs)
+        else:
+            env = atari.AtariEnv(**env_kwargs)
 
         if not args.dry_run:
             summary_path = os.path.join(args.output_dir, 'summary')
@@ -184,7 +237,10 @@ def main(args):
                     previous_x = current_x
 
                     # sample one action with the given probability distribution
-                    _label = int(sess.run(sample_action, feed_dict={observations: [_observation]})[0, 0])
+                    _label, _back1 = sess.run([sample_action, back1], feed_dict={observations: [_observation]})
+                    _label = int(_label[0, 0])
+
+                    #_label = int(sess.run(sample_action, feed_dict={observations: [_observation]})[0, 0])
 
                     _action = args.actions[_label]
 
@@ -195,7 +251,7 @@ def main(args):
                     _episode_rewards.append(reward)
 
                     # Overlay
-                    _back1 = sess.run(back1, feed_dict={observations: [_observation]})
+                    #_back1 = sess.run(back1, feed_dict={observations: [_observation]})
 
                     if args.render:
                         env.set_overlay(data=_back1)
@@ -254,7 +310,7 @@ if __name__ == '__main__':
     parser.add_argument(
         '--n-batch',
         type=int,
-        default=6000)
+        default=100000)
     parser.add_argument(
         '--batch-size',
         type=int,

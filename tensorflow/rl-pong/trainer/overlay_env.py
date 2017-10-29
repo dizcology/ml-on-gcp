@@ -1,7 +1,7 @@
-import gym
+from gym.envs import atari
 import numpy as np
 
-class AtariEnvOverlay(gym.envs.atari.AtariEnv):
+class AtariEnvOverlay(atari.AtariEnv):
     def __init__(self, *args, **kwargs):
         print('Loading AtariEnv with overlay')
         super(AtariEnvOverlay, self).__init__(*args, **kwargs)
@@ -9,10 +9,14 @@ class AtariEnvOverlay(gym.envs.atari.AtariEnv):
         self.overlay = np.zeros(210 * 160 * 3).astype(np.uint8).reshape(210, 160, 3)
 
 
-    def set_overlay(self, data):
+    def set_overlay(self, data=None):
         self.overlay = np.zeros(210 * 160 * 3).astype(np.uint8).reshape(210, 160, 3)
+
+        if data is None:
+            return
+
         # Note: data.shape = (1, 6400)
-        cutoff = np.percentile(data, 90, axis=1)
+        cutoff = np.percentile(data, 95, axis=1)
         data = data.reshape(80, 80)
 
         data[data < cutoff] = 0
