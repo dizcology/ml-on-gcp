@@ -107,14 +107,20 @@ def main(args):
 
 
     # FIXME: this seems to slow down training
-    # Where is the agent looking at?
-    pp = probs * (1 - probs)
-    #ppp = tf.constant(np.random.rand(49).astype(np.float32).reshape(7, 7))
+    # Where is the agent looking at? (allowing only 1 hidden layer for now)
+    # Putting this "backprop" calculation in a separate graph
+
+    probs_ph = tf.placeholder(shape=(1,3), dtype=tf.float32)
+    pp = probs_ph * (1 - probs_ph)
+    
     back2 = tf.matmul(pp, tf.transpose(last_layer.kernel))
 
-    hidden_output = outputs[-2]
-    condition = tf.less(hidden_output, tf.zeros_like(hidden_output))
-    mask = tf.where(condition, tf.zeros_like(hidden_output), tf.ones_like(hidden_output))
+    # TODO: but what about this?
+    hidden_output = outputs[0]
+    hidden_output_ph = tf.placeholder(shape=(1, args.hidden_dims[0]), dtype=tf.float32)
+
+    condition = tf.less(hidden_output_ph, tf.zeros_like(hidden_output_ph))
+    mask = tf.where(condition, tf.zeros_like(hidden_output_ph), tf.ones_like(hidden_output_ph))
 
     masked_back2 = mask * back2
 
@@ -202,7 +208,7 @@ def main(args):
         #env = TimeLimit(env,
         #                max_episode_steps=env.spec.max_episode_steps,
         #                max_episode_seconds=env.spec.max_episode_seconds)
-        if args.render:
+        if args.overlay:
             env = AtariEnvOverlay(**env_kwargs)
         else:
             env = atari.AtariEnv(**env_kwargs)
@@ -237,7 +243,7 @@ def main(args):
                     previous_x = current_x
 
                     # sample one action with the given probability distribution
-                    _label = sess.run(sample_action, feed_dict={observations: [_observation]})
+                    _label, _hidden_output, _probs = sess.run([sample_action, hidden_output, probs], feed_dict={observations: [_observation]})
                     _label = int(_label[0, 0])
 
                     #_label = int(sess.run(sample_action, feed_dict={observations: [_observation]})[0, 0])
@@ -254,8 +260,9 @@ def main(args):
                     #_back1 = sess.run(back1, feed_dict={observations: [_observation]})
 
                     if args.render:
-                        _back1 = sess.run(back1, feed_dict={observations: [_observation]})
-                        env.set_overlay(data=_back1)
+                        if args.overlay:
+                            _back1 = sess.run(back1, feed_dict={probs_ph: _probs, hidden_output_ph: _hidden_output})
+                            env.set_overlay(data=_back1)
                         env.render()
 
                     if done:
@@ -348,6 +355,10 @@ if __name__ == '__main__':
         action='store_true')
     parser.add_argument(
         '--dry-run',
+        default=False,
+        action='store_true')
+    parser.add_argument(
+        '--overlay',
         default=False,
         action='store_true')
 
