@@ -105,13 +105,13 @@ def main(args):
     action_costs_tensor = args.beta * tf.constant(args.action_costs, dtype=tf.float32)
     probs = tf.nn.softmax(logits=logits)
 
+
+    # FIXME: this seems to slow down training
     # Where is the agent looking at?
     pp = probs * (1 - probs)
     #ppp = tf.constant(np.random.rand(49).astype(np.float32).reshape(7, 7))
     back2 = tf.matmul(pp, tf.transpose(last_layer.kernel))
 
-    # TODO: complete backprop
-    #backrelu = tf.nn.relu()
     hidden_output = outputs[-2]
     condition = tf.less(hidden_output, tf.zeros_like(hidden_output))
     mask = tf.where(condition, tf.zeros_like(hidden_output), tf.ones_like(hidden_output))
@@ -237,7 +237,7 @@ def main(args):
                     previous_x = current_x
 
                     # sample one action with the given probability distribution
-                    _label, _back1 = sess.run([sample_action, back1], feed_dict={observations: [_observation]})
+                    _label = sess.run(sample_action, feed_dict={observations: [_observation]})
                     _label = int(_label[0, 0])
 
                     #_label = int(sess.run(sample_action, feed_dict={observations: [_observation]})[0, 0])
@@ -254,6 +254,7 @@ def main(args):
                     #_back1 = sess.run(back1, feed_dict={observations: [_observation]})
 
                     if args.render:
+                        _back1 = sess.run(back1, feed_dict={observations: [_observation]})
                         env.set_overlay(data=_back1)
                         env.render()
 
