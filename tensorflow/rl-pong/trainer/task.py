@@ -25,6 +25,7 @@ class AtariEnvOverlay(atari.AtariEnv):
         if data is None:
             return
 
+        #assert max(data.reshape(-1).tolist()) <= 0
         # Note: data.shape = (1, 6400)
         data = np.abs(data)
         cutoff = np.percentile(data, 95, axis=1)
@@ -49,6 +50,15 @@ class AtariEnvOverlay(atari.AtariEnv):
         image += self.overlay
 
         return image
+
+    # Making sure that the overlay is not returned as game state.
+    # Original: https://github.com/openai/gym/blob/master/gym/envs/atari/atari_env.py
+    def _get_obs(self):
+        if self._obs_type == 'ram':
+            return self._get_ram()
+        elif self._obs_type == 'image':
+            return self.ale.getScreenRGB2()
+
 ####
 
 # Open AI gym Atari env: 0: 'NOOP', 2: 'UP', 3: 'DOWN'
