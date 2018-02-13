@@ -1,0 +1,70 @@
+# gcloud container clusters create jupyter-test --zone=us-central1-a --num-nodes=1 --machine-type=n1-standard-64 --disk-size=100
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: jupyter
+  name: jupyter
+spec:
+  ports:
+  - port: 80
+    targetPort: 8888
+  selector:
+    app: jupyter
+  type: LoadBalancer
+---
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  labels:
+    app: jupyter
+  name: jupyter
+spec:
+  template:
+    metadata:
+      labels:
+        app: jupyter
+    spec:
+      volumes:
+      # A persistent disk need to be created first, for example with
+      # the following command:
+      # gcloud compute disks create jupyter-pd --size 200GB --zone us-central1-a
+      - name: jupyter-pd
+        gcePersistentDisk:
+          pdName: jupyter-pd
+          fsType: ext4
+      - name: ml-on-gcp
+        gitRepo:
+           repository: "https://github.com/GoogleCloudPlatform/ml-on-gcp.git"
+      initContainers:
+      # Use initContainers to update ownership so that the jupyter server
+      # has access to the mounted volumes
+      - name: jupyter-mounts-init
+        image: busybox
+        imagePullPolicy: IfNotPresent
+        # jovyan 1000:100 is the user created by the jupyter Docker image
+        # The jupyter server is started by jovyan
+        command: ["sh", "-c", "chown -R 1000:100 /home/jovyan"]
+        volumeMounts:
+        - name: jupyter-pd
+          mountPath: /home/jovyan/pd
+        - name: ml-on-gcp
+          mountPath: /home/jovyan/pd/git_repos
+      containers:
+      - name: jupyter
+        image: jupyter/datascience-notebook:latest
+        imagePullPolicy: IfNotPresent
+        command: ["bash", "start.sh"]
+        # information on how to secure the server:
+        # http://jupyter-notebook.readthedocs.io/en/stable/public_server.html
+        args: ["jupyter", "lab", "--LabApp.token='TOKEN_FOR_LOGIN'", "--no-browser"]
+        ports:
+        - containerPort: 8888
+        volumeMounts:
+        - mountPath: /home/jovyan/pd
+          name: jupyter-pd
+        # the mountPath for a gitRepo is the parent of the git clone
+        - mountPath: /home/jovyan/pd/git_repos
+          name: ml-on-gcp
+
+
