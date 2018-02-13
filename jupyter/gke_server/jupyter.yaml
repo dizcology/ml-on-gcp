@@ -1,4 +1,3 @@
-# gcloud container clusters create jupyter-test --zone=us-central1-a --num-nodes=1 --machine-type=n1-standard-64 --disk-size=100
 apiVersion: v1
 kind: Service
 metadata:
@@ -26,14 +25,13 @@ spec:
         app: jupyter
     spec:
       volumes:
-      # A persistent disk need to be created first, for example with
-      # the following command:
-      # gcloud compute disks create jupyter-pd --size 200GB --zone us-central1-a
       - name: jupyter-pd
         gcePersistentDisk:
           pdName: jupyter-pd
           fsType: ext4
       - name: ml-on-gcp
+        # each time the repository is re-mounted, the existing one
+        # on the persistent disk gets overwritten
         gitRepo:
            repository: "https://github.com/GoogleCloudPlatform/ml-on-gcp.git"
       initContainers:
@@ -66,5 +64,10 @@ spec:
         # the mountPath for a gitRepo is the parent of the git clone
         - mountPath: /home/jovyan/pd/git_repos
           name: ml-on-gcp
+        resources:
+          requests:
+            # the resources must be fewer than what is available on the cluster
+            cpu: 2
+            memory: 10Gi
 
 
