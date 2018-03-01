@@ -14,124 +14,90 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import matplotlib as mpl
-mpl.use('TkAgg')
-
-import matplotlib.pyplot as plt
-from skimage.transform import resize
-from skimage import img_as_ubyte
-from PIL import Image
+import matplotlib
+matplotlib.use('tkAgg')
 
 import os
-import urllib
-import tarfile
 import pickle
 import argparse
 
+import matplotlib.pyplot as plt
+from PIL import Image
+from skimage.transform import resize
+from skimage import img_as_ubyte
 import tensorflow as tf
 from tensorflow.contrib.graph_editor import reroute
 
-key_url = 'https://gist.githubusercontent.com/yrevar/6135f1bd8dcf2e0cc683/raw/d133d61a09d7e5a3b36b8c111a8dd5c4b5d560ee/imagenet1000_clsid_to_human.pkl'
-#urllib.urlretrieve(key_url, 'imagenet1000_clsid_to_human.pkl')
-
-with open('imagenet1000_clsid_to_human.pkl') as kf:
-    _key = pickle.load(kf)
-
-# off by 1
-key = {0: 'unknown'}
-for k, v in _key.iteritems():
-    key[k+1] = _key[k]
+from helpers import load_pb_as_graph_def
 
 
-model_info = {
-    'data_url': 'http://download.tensorflow.org/models/mobilenet_v1_1.0_224_frozen.tgz',
+MODEL_DIR = 'model'
+KEY_FN = 'key.pkl'
+MODEL_FN = 'mobilenet_v1_1.0_224/frozen_graph.pb'
+
+MODEL_INFO = {
     'input_name': 'input:0',
     'output_name': 'MobilenetV1/Predictions/Softmax:0',
     'logits_name': 'MobilenetV1/Logits/SpatialSqueeze:0'
 }
-model_dir = 'model'
-frozen_graph_fn = os.path.join(model_dir, 'mobilenet_v1_1.0_224', 'frozen_graph.pb')
-
-def download_and_extract(data_url, model_dir=model_dir):
-    os.makedirs(model_dir)
-    filename = data_url.split('/')[-1]
-    filepath = os.path.join(model_dir, filename)
-
-    urllib.urlretrieve(data_url, filepath)
-
-    tarfile.open(filepath, 'r:gz').extractall(model_dir)
 
 
-def load_pb_as_graph_def(frozen_graph_fn):
-    graph_def = tf.GraphDef()
+def main(args):
+    # Load the keys so we can print human readable labels.
+    with open(os.path.join(MODEL_DIR, KEY_FN), 'r') as kf:
+        key = pickle.load(kf)
 
-    with open(frozen_graph_fn, 'rb') as f:
-        graph_def.ParseFromString(f.read())
-
-    return graph_def
-
-
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--epsilon', type=float, default=0.007)
-    parser.add_argument('--n-iter', type=int, default=1)
-    parser.add_argument('img_fn')
-
-    args = parser.parse_args()
-
-    img_fn = args.img_fn
-    epsilon = args.epsilon
-    n_iter = args.n_iter
-
-    original = plt.imread(img_fn)
-
-    # preserve_range=True seems to break things!
+    original = plt.imread(args.img_fn)
     a = resize(original, (224, 224, 3), mode='constant')
 
-    tf.reset_default_graph()
-
-    graph_def = load_pb_as_graph_def(frozen_graph_fn)
+    # Load the frozen graph into the default graph.
+    graph_def = load_pb_as_graph_def(os.path.join(MODEL_DIR, MODEL_FN))
     input_, logits, prob = tf.import_graph_def(
         graph_def, name='',
-        return_elements=[model_info['input_name'], model_info['logits_name'], model_info['output_name']])
+        return_elements=[MODEL_INFO['input_name'], MODEL_INFO['logits_name'], MODEL_INFO['output_name']])
 
-    # create a variable and reroute from it
+    # Create a variable and reroute from it.
     var_input = tf.get_variable(name='var_input', dtype=input_.dtype, shape=input_.shape)
     reroute._reroute_t(var_input.value(), input_, input_.consumers())
 
+    # Instead of feeding data, we would assign the data to the var_input
+    # variable when we want to specify an image.
     data = tf.placeholder(dtype=var_input.dtype, shape=var_input.shape)
     assign = tf.assign(var_input, data)
 
+    # Get the highest softmax score and the label
     score = tf.reduce_max(prob)
     index = tf.argmax(prob, axis=1)[0]
 
-    # feed label based on index during session
+    # Feed label based on index during session.
     one_hot = tf.one_hot([index], 1001)
     label = tf.placeholder(dtype=tf.float32, shape=logits.shape)
 
+    # The loss function is to minimize the top-1 label's score.
     loss = tf.losses.softmax_cross_entropy(label, logits)
 
+    # Calculate and report entropy to get a sense of the model's
+    # uncertainty.
     entropy = - tf.reduce_sum(prob * tf.log(prob))
 
+    # Using an optimizer to calculate gradients.
     optimizer = tf.train.GradientDescentOptimizer(learning_rate=0.01)
-
-    gv = optimizer.compute_gradients(loss, var_list=[var_input])[0]
+    grad, var = optimizer.compute_gradients(loss, var_list=[var_input])[0]
 
     with tf.Session() as sess:
-        for i in range(n_iter):
+        for i in range(args.n_iter):
             # specify an image to perturb
             _ = sess.run(assign, {data: [a]})
 
             _one_hot = sess.run(one_hot)
-            _g, _v = sess.run(gv, {label: _one_hot})
+            _grad = sess.run(grad, {label: _one_hot})[0]
 
             print(sess.run(score), key[sess.run(index)], sess.run(entropy))
 
-            # update
-            _g = _g[0]
-            _g[_g > 0] = 1.0
-            _g[_g < 0] = -1.0
-            a = a + epsilon * _g
+            # compute sign, then update
+            _grad[_grad > 0] = 1.0
+            _grad[_grad < 0] = -1.0
+            a = a + args.epsilon * _grad
 
         # final image
         _ = sess.run(assign, {data: [a]})
@@ -141,10 +107,10 @@ if __name__ == '__main__':
         original_img = Image.fromarray(img_as_ubyte(original))
         original_img.save('original.png')
 
-        _g_resized = resize(_g, list(original.shape)[:2], mode='constant')
-        _g_out = img_as_ubyte(_g_resized)
-        _g_img = Image.fromarray(_g_out)
-        _g_img.save('signg.png')
+        _grad_resized = resize(_grad, list(original.shape)[:2], mode='constant')
+        _grad_out = img_as_ubyte(_grad_resized)
+        _grad_img = Image.fromarray(_grad_out)
+        _grad_img.save('signg.png')
 
         a_modified = sess.run(var_input)[0]
         a_modified[a_modified > 1] = 1
@@ -158,6 +124,19 @@ if __name__ == '__main__':
     from subprocess import call
     call(['open', 'original.png', 'signg.png', 'out.png'])
     pass
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--epsilon', type=float, default=0.007)
+    parser.add_argument('--n-iter', type=int, default=1)
+    parser.add_argument('img_fn')
+
+    args = parser.parse_args()
+
+    main(args)
+
+    
 
 
 
