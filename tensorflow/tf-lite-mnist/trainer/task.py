@@ -1,11 +1,10 @@
-# encoding: UTF-8
-# Copyright 2018 Google.com
+# Copyright 2018 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-# http://www.apache.org/licenses/LICENSE-2.0
+#      http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -74,10 +73,12 @@ def main(args):
     Ylogits = tf.matmul(Y4, W5) + B5
     Y = tf.nn.softmax(Ylogits, name='output')
 
+    # ops from this point and on will not be frozen nor converted to tflite
+    # loss
     cross_entropy = tf.nn.softmax_cross_entropy_with_logits(logits=Ylogits, labels=Y_)
     cross_entropy = tf.reduce_mean(cross_entropy)*100
 
-    # This could be added to tensorboard.
+    # *training* accuracy
     correct_count = tf.reduce_sum(tf.cast(tf.equal(tf.argmax(Y, 1), tf.argmax(Y_, 1)), dtype=tf.int16))
     train_step = tf.train.AdamOptimizer(learning_rate).minimize(cross_entropy, global_step=global_step)
 
