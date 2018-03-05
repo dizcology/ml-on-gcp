@@ -79,7 +79,7 @@ def main(args):
     cross_entropy = tf.reduce_mean(cross_entropy)*100
 
     # *training* accuracy
-    correct_count = tf.reduce_sum(tf.cast(tf.equal(tf.argmax(Y, 1), tf.argmax(Y_, 1)), dtype=tf.int16))
+    correct_count = tf.reduce_sum(tf.cast(tf.equal(tf.argmax(Y, 1), tf.argmax(Y_, 1)), dtype=tf.float32))
     train_step = tf.train.AdamOptimizer(learning_rate).minimize(cross_entropy, global_step=global_step)
 
     # saver
@@ -97,7 +97,7 @@ def main(args):
             _, ccount, gstep = sess.run([train_step, correct_count, global_step], {X: batch_X, Y_: batch_Y})
 
             if i % 10 == 0:
-                print('batch {}, correct count: {}'.format(i, ccount))
+                print('batch {}, train accuracy: {}'.format(i, ccount / args.batch_size))
 
             if i % args.save_model_steps == 0:
                 # save checkpoints
@@ -128,13 +128,19 @@ def main(args):
                     with tf.gfile.FastGFile(tflite_model_path, 'wb') as f:
                         f.write(tflite_model)
 
+        # test data
+        test_X = mnist.test.images
+        test_Y = mnist.test.labels
+        test_ccount = sess.run(correct_count, {X: test_X, Y_: test_Y})
+        print('>>> test accuracy: {}'.format(test_ccount / len(test_Y)))
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument(
         '--n-steps',
         type=int,
-        default=5000)
+        default=3000)
     parser.add_argument(
         '--batch-size',
         type=int,
