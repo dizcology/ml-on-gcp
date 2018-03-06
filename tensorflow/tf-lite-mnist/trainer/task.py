@@ -124,6 +124,7 @@ def main(args):
                     # If we leave the default name=None, the imported tensor names get the `import/` prefix, which interferes with toco_convert.
                     _X, _Y = tf.import_graph_def(frozen_graph_def, return_elements=['input:0', 'output:0'], name='')
 
+                    # TODO: try the quantized version
                     tflite_model = lite.toco_convert(frozen_graph_def, input_tensors=[_X], output_tensors=[_Y])
                     with tf.gfile.FastGFile(tflite_model_path, 'wb') as f:
                         f.write(tflite_model)
@@ -140,7 +141,7 @@ if __name__ == '__main__':
     parser.add_argument(
         '--n-steps',
         type=int,
-        default=3000)
+        default=300)
     parser.add_argument(
         '--batch-size',
         type=int,
