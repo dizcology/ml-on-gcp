@@ -23,6 +23,8 @@ JOB_NAME="{name}_$now"
 
 JOB_DIR=$BUCKET"/"$JOB_NAME"/"
 
+gcloud auth activate-service-account --key-file=$GOOGLE_APPLICATION_CREDENTIALS
+
 gcloud ml-engine jobs submit training $JOB_NAME \
     --job-dir $JOB_DIR  \
     --package-path $TRAINER_PACKAGE_PATH \
