@@ -24,7 +24,13 @@ from textwrap import dedent
 from oauth2client.client import GoogleCredentials
 from googleapiclient import discovery
 
+# using default service account of the environment:
 credentials = GoogleCredentials.get_application_default()
+
+# to use with service account:
+# from google.oauth2 import service_account
+# key_filename = 'key.json'
+# credentials = service_account.Credentials.from_service_account_file(key_filename)
 
 # Source:
 # https://cloud.google.com/ml-engine/docs/how-tos/online-predict
